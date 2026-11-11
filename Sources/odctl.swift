@@ -11,7 +11,7 @@ import ArgumentParser
 // Define version and license information (accessed via --version flag)
 let versionText = """
     odctl - OneDrive command-line control for macOS
-    Version 1.0.0-20261110-01
+    Version 1.0.0-20261111-01
     Copyright © 2026 Michelle Catherine Marcó
     MIT License: https://opensource.org/license/MIT
     """
@@ -53,66 +53,80 @@ let versionText = """
         }
     }
 
+    // Function to execute a specified shell command, with options
+    func execShellCmd(_ cmd: String) -> Int32 {
+        // Convert cmd string to array
+        let cmdArray = cmd.components(separatedBy: " ")
+        // Create new instance of Process()
+        let shellCmd = Process()
+        do {
+            // Set executable URL to /usr/bin/env so we can use executables in PATH
+            shellCmd.executableURL = URL(filePath: "/usr/bin/env")
+            // Pass cmdArray to arguments
+            shellCmd.arguments = cmdArray
+            // Try to run shell command
+            try shellCmd.run()
+            shellCmd.waitUntilExit()
+        } catch {
+            // If shell command execution fails, exit with error
+            errorMessage("Error: shell command \"\(cmd)\" execution failed")
+            exit(EXIT_FAILURE)
+        }
+        // Return shell command termination status
+        return shellCmd.terminationStatus
+    }
+
+    // Function to get app path using Spotlight shell command (mdfind)
+    func getAppPath(_ app: String) -> String {
+        // Make app mutable (it's immutable by default)
+        var app = app
+        // If app doesn't end in ".app", add it
+        if !app.hasSuffix(".app") { app.append(".app") }
+        // Define cmd, first as string, then as array
+        let cmd = "mdfind -name " + app
+        let cmdArray = cmd.components(separatedBy: " ")
+        // Create new instances of Process() and Pipe()
+        let getAppPathCmd = Process()
+        let pipe = Pipe()
+        do {
+            // Output stdout and stderr to pipe
+            getAppPathCmd.standardOutput = pipe
+            getAppPathCmd.standardError = pipe
+            // Set executable URL to /usr/bin/env so we can use executables in PATH
+            getAppPathCmd.executableURL = URL(filePath: "/usr/bin/env")
+            // Pass commandArray to arguments
+            getAppPathCmd.arguments = cmdArray
+            // Prevent accidental user input
+            getAppPathCmd.standardInput = nil
+            // Try to run shell command
+            try getAppPathCmd.run()
+        } catch {
+            // If shell command execution fails, exit with error
+            errorMessage("Error: shell command \"\(cmd)\" execution failed")
+            exit(EXIT_FAILURE)
+        }
+        // Capture shell command output by reading pipe like a file
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        // Convert data to output, a UTF-8 encoded string stripped of newlines
+        let output = String(data: data, encoding: .utf8)!.trimmingCharacters(in: .newlines)
+        // If output ends in app, extract only the app path and return it, else return an empty string
+        if output.hasSuffix(app) {
+            return String(output.suffix(from: output.firstIndex(of: "/") ?? output.startIndex))
+        } else {
+            return ""
+        }
+    }
+
     // Function to check if a process is running
     func isAppRunning(_ app: String) -> Bool {
+        // Create array of running applications and reduce the array to just names
         let apps = NSWorkspace.shared.runningApplications.compactMap { $0.localizedName }
+        // Search for specified app in array of running applications
         if apps.contains(app) {
             return true
         } else {
             return false
         }
-    }
-
-    // Function to check if app is installed
-    // Returns both installed status and path
-    func isAppInstalled(_ app: String) -> (installed: Bool, appPath: String) {
-        // Make app mutable (it's immutable by default)
-        var app = app
-        // If supplied app name doesn't end in ".app", add it
-        if !app.hasSuffix(".app") {
-            app.append(".app")
-        }
-        // Use Spotlight search (mdfind) to locate app
-        let spotlightCmd = Process()
-        let pipe = Pipe()
-        do {
-            spotlightCmd.standardOutput = pipe
-            spotlightCmd.standardError = pipe
-            spotlightCmd.executableURL = URL(filePath: "/usr/bin/env")
-            spotlightCmd.arguments = ["mdfind", "-name", app]
-            spotlightCmd.standardInput = nil
-            try spotlightCmd.run()
-        } catch {
-            errorMessage("Error: shell command \"mdfind \(app)\" execution failed")
-            exit(EXIT_FAILURE)
-        }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        let output = String(data: data, encoding: .utf8)!
-        // If output ends in app, return installed status true and app path
-        // Else return installed status false and empty path
-        // This is accomplished by checking if the output ends in app (if it doesn't, it's not installed)
-        if output.trimmingCharacters(in: .newlines).hasSuffix(app) {
-            // Determining the app path is accomplished by searching output for the first instance of "/" and extracting everything from that point forward (except newlines)
-            return (installed: true, appPath: String(output.suffix(from: output.firstIndex(of: "/") ?? output.startIndex)).trimmingCharacters(in: .newlines))
-        } else {
-            return (installed: false, appPath: "")
-        }
-    }
-
-    // Function to execute a specified shell command, with options
-    func execShellCmd(_ cmd: String) -> Int32 {
-        let cmdArray = cmd.components(separatedBy: " ")
-        let shellCmd = Process()
-        do {
-            shellCmd.executableURL = URL(filePath: "/usr/bin/env")
-            shellCmd.arguments = cmdArray
-            try shellCmd.run()
-            shellCmd.waitUntilExit()
-        } catch {
-            errorMessage("Error: shell command \"\(cmd)\" execution failed")
-            exit(EXIT_FAILURE)
-        }
-        return shellCmd.terminationStatus
     }
 
     // Function to show preamble when verbose mode is enabled
@@ -176,9 +190,9 @@ let versionText = """
 
     // Function to show OneDrive path
     func showOneDrivePath() {
-        let result: (installed: Bool, appPath: String) = isAppInstalled("OneDrive")
-        if result.installed {
-            print(result.appPath)
+        let result = getAppPath("OneDrive")
+        if !result.isEmpty {
+            print(result)
         } else {
             errorMessage("Error: OneDrive is not installed")
         }

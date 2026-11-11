@@ -11,7 +11,7 @@ So really, this program is best approached as a proof of concept and a resource.
 
 - If you’re looking for a working implementation of the [Swift Argument Parser](https://github.com/apple/swift-argument-parser), this program has one.
 - If you’re looking for a way to execute a shell command, take a look at the `execShellCmd()` function.
-- If you’re looking for a way to check if an app is installed (anywhere, not just in `/Applications`), take a look at the `isAppInstalled()` (which is called by `showOneDrivePath()`).
+- If you’re looking for a way to get an installed app’s path (anywhere, not just in `/Applications`), take a look at the `getAppPath()` (which is called by `showOneDrivePath()`).
 - If you’re looking for a way to check if an app is running, take a look at `isAppRunning()` (which is called by `showOneDriveStatus()`).
 
 Keep in mind that I’m a Swift newbie, and that this program’s code may or may not conform to best practices. Use it at your own risk.
