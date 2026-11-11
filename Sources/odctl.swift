@@ -94,7 +94,7 @@ let versionText = """
             getAppPathCmd.standardError = pipe
             // Set executable URL to /usr/bin/env so we can use executables in PATH
             getAppPathCmd.executableURL = URL(filePath: "/usr/bin/env")
-            // Pass commandArray to arguments
+            // Pass cmdArray to arguments
             getAppPathCmd.arguments = cmdArray
             // Prevent accidental user input
             getAppPathCmd.standardInput = nil
