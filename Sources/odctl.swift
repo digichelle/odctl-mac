@@ -11,20 +11,19 @@ import ArgumentParser
 // Define version and license information (accessed via --version flag)
 let versionText = """
     odctl - OneDrive command-line control for macOS
-    Version 1.0.0-20261109-01
+    Version 1.0.0-20261110-01
     Copyright © 2026 Michelle Catherine Marcó
     MIT License: https://opensource.org/license/MIT
     """
 
 // Define functions
-@MainActor
-class ODCtl {
-    
+@MainActor class ODCtl {
+
     // Initialize mode flags
     var dryRunMode = false
     var quietMode = false
     var verboseMode = false
-    
+
     // Struct to enable stderr output
     struct StandardError: TextOutputStream, Sendable {
         private static let handle = FileHandle.standardError
@@ -32,20 +31,20 @@ class ODCtl {
             Self.handle.write(Data(string.utf8))
         }
     }
-    
+
     // Function to write error messages
     func errorMessage(_ message: String) {
         var stderr = StandardError()
         print(message, to: &stderr)
     }
-    
+
     // Function to write verbose messages
     func verboseMessage(_ message: String) {
         if verboseMode {
             print(message)
         }
     }
-    
+
     // Function to write optional messages
     // If both quiet and verbose modes are specified, the latter takes priority
     func optionalMessage(_ message: String) {
@@ -53,20 +52,19 @@ class ODCtl {
             print(message)
         }
     }
-    
+
     // Function to check if a process is running
     func isAppRunning(_ app: String) -> Bool {
-        let apps = NSWorkspace().runningApplications.compactMap { $0.localizedName }
+        let apps = NSWorkspace.shared.runningApplications.compactMap { $0.localizedName }
         if apps.contains(app) {
             return true
         } else {
             return false
         }
     }
-    
+
     // Function to check if app is installed
     // Returns both installed status and path
-    @available(macOS 13.0, *)
     func isAppInstalled(_ app: String) -> (installed: Bool, appPath: String) {
         // Make app mutable (it's immutable by default)
         var app = app
@@ -81,7 +79,7 @@ class ODCtl {
             spotlightCmd.standardOutput = pipe
             spotlightCmd.standardError = pipe
             spotlightCmd.executableURL = URL(filePath: "/usr/bin/env")
-            spotlightCmd.arguments = ["mdfind", app]
+            spotlightCmd.arguments = ["mdfind", "-name", app]
             spotlightCmd.standardInput = nil
             try spotlightCmd.run()
         } catch {
@@ -100,9 +98,8 @@ class ODCtl {
             return (installed: false, appPath: "")
         }
     }
-    
+
     // Function to execute a specified shell command, with options
-    @available(macOS 13.0, *)
     func execShellCmd(_ cmd: String) -> Int32 {
         let cmdArray = cmd.components(separatedBy: " ")
         let shellCmd = Process()
@@ -117,7 +114,7 @@ class ODCtl {
         }
         return shellCmd.terminationStatus
     }
-    
+
     // Function to show preamble when verbose mode is enabled
     func verbosePreamble() {
         verboseMessage("""
@@ -127,9 +124,8 @@ class ODCtl {
         
         """)
     }
-    
+
     // Function to define start commands
-    @available(macOS 13.0, *)
     func startCmd() -> Int {
         // If dry run mode, bypass command execution
         if dryRunMode {
@@ -148,9 +144,8 @@ class ODCtl {
             return 1
         }
     }
-    
+
     // Function to define stop commands
-    @available(macOS 13.0, *)
     func stopCmd() -> Int {
         // If dry run mode, bypass command execution
         if dryRunMode {
@@ -162,8 +157,6 @@ class ODCtl {
             return 1
         }
         // Run shell command
-        // Note: killall sends SIGTERM by default, as opposed to SIGKILL
-        // (In other words: don't worry, this is a clean termination)
         verboseMessage("Running shell command: killall OneDrive")
         if execShellCmd("killall OneDrive") == 0 {
             return 0
@@ -171,7 +164,7 @@ class ODCtl {
             return 1
         }
     }
-    
+
     // Function to show OneDrive status
     func showOneDriveStatus() {
         if isAppRunning("OneDrive") {
@@ -180,9 +173,8 @@ class ODCtl {
             print("OneDrive is not running")
         }
     }
-    
+
     // Function to show OneDrive path
-    @available(macOS 13.0, *)
     func showOneDrivePath() {
         let result: (installed: Bool, appPath: String) = isAppInstalled("OneDrive")
         if result.installed {
@@ -191,9 +183,8 @@ class ODCtl {
             errorMessage("Error: OneDrive is not installed")
         }
     }
-    
+
     // Function to start OneDrive
-    @available(macOS 13.0, *)
     func startOneDrive() {
         optionalMessage("Starting OneDrive...")
         if startCmd() == 0 {
@@ -203,9 +194,8 @@ class ODCtl {
             exit(EXIT_FAILURE)
         }
     }
-    
+
     // Function to stop OneDrive
-    @available(macOS 13.0, *)
     func stopOneDrive() {
         optionalMessage("Stopping OneDrive...")
         if stopCmd() == 0 {
@@ -215,17 +205,16 @@ class ODCtl {
             exit(EXIT_FAILURE)
         }
     }
-    
+
     // Function to restart OneDrive
-    @available(macOS 13.0, *)
     func restartOneDrive() {
         optionalMessage("Restarting OneDrive...")
         if stopCmd() != 0 {
             errorMessage("Error: OneDrive is not running")
             exit(EXIT_FAILURE)
         }
-        // Wait 5 seconds until start
-        verboseMessage("Waiting 5 seconds until start...")
+        // Wait for termination before proceeding
+        verboseMessage("Waiting for termination before proceeding...")
         Thread.sleep(forTimeInterval: 5)
         if startCmd() == 0 {
             optionalMessage("OneDrive restarted!")
@@ -234,7 +223,7 @@ class ODCtl {
             exit(EXIT_FAILURE)
         }
     }
-    
+
 }
 
 // Command/option parsing begins here
@@ -257,75 +246,68 @@ struct ModeFlags: ParsableArguments {
 
 // Root command
 @main
-@available(macOS 13.0, *)
-struct RootCmd: ParsableCommand {
+struct Root: @preconcurrency ParsableCommand {
     // Declare version (enables --version flag) and subcommands
-    static let configuration = CommandConfiguration(
+    @MainActor static let configuration = CommandConfiguration(
         commandName: "odctl",
         version: versionText,
-        subcommands: [StatusCmd.self, WhereCmd.self, WhichCmd.self, StartCmd.self, StopCmd.self, RestartCmd.self]
+        subcommands: [Status.self, Where.self, Which.self, Start.self, Stop.self, Restart.self]
     )
 }
 
 // Subcommands
-@available(macOS 13.0, *)
-extension RootCmd {
+extension Root {
 
-    struct StatusCmd: @preconcurrency ParsableCommand {
+    struct Status: @preconcurrency ParsableCommand {
         // Configure command name and help text
-        static let configuration = CommandConfiguration(
+        @MainActor static let configuration = CommandConfiguration(
             commandName: "status",
             abstract: "Show OneDrive status."
         )
         // Run command
-        @MainActor
-        mutating func run() throws {
+        @MainActor mutating func run() throws {
             let odctl = ODCtl()
             odctl.showOneDriveStatus()
         }
     }
 
-    struct WhereCmd: @preconcurrency ParsableCommand {
+    struct Where: @preconcurrency ParsableCommand {
         // Configure command name and help text
-        static let configuration = CommandConfiguration(
+        @MainActor static let configuration = CommandConfiguration(
             commandName: "where",
             abstract: "Alias of which (hidden)",
             shouldDisplay: false
         )
         // Run command
-        @MainActor
-        mutating func run() throws {
+        @MainActor mutating func run() throws {
             let odctl = ODCtl()
             odctl.showOneDrivePath()
         }
     }
 
-    struct WhichCmd: @preconcurrency ParsableCommand {
+    struct Which: @preconcurrency ParsableCommand {
         // Configure command name and help text
-        static let configuration = CommandConfiguration(
+        @MainActor static let configuration = CommandConfiguration(
             commandName: "which",
             abstract: "Show OneDrive path."
         )
         // Run command
-        @MainActor
-        mutating func run() throws {
+        @MainActor mutating func run() throws {
             let odctl = ODCtl()
             odctl.showOneDrivePath()
         }
     }
 
-    @available(macOS 13.0, *)
-    struct StartCmd: @preconcurrency ParsableCommand {
+    struct Start: @preconcurrency ParsableCommand {
         // Configure command name and help text
-        static let configuration = CommandConfiguration(
+        @MainActor static let configuration = CommandConfiguration(
             commandName: "start",
             abstract: "Start OneDrive."
         )
         // Add mode flags to command
         @OptionGroup var modeFlags: ModeFlags
         // Run command
-        @MainActor
-        mutating func run() throws {
+        @MainActor mutating func run() throws {
             let odctl = ODCtl()
             if modeFlags.dryRun { odctl.dryRunMode = true }
             if modeFlags.quiet { odctl.quietMode = true }
@@ -335,18 +317,16 @@ extension RootCmd {
         }
     }
 
-    @available(macOS 13.0, *)
-    struct StopCmd: @preconcurrency ParsableCommand {
+    struct Stop: @preconcurrency ParsableCommand {
         // Configure command name and help text
-        static let configuration = CommandConfiguration(
+        @MainActor static let configuration = CommandConfiguration(
             commandName: "stop",
             abstract: "Stop OneDrive."
         )
         // Add mode flags to command
         @OptionGroup var modeFlags: ModeFlags
         // Run command
-        @MainActor
-        mutating func run() throws {
+        @MainActor mutating func run() throws {
             let odctl = ODCtl()
             if modeFlags.dryRun { odctl.dryRunMode = true }
             if modeFlags.quiet { odctl.quietMode = true }
@@ -356,18 +336,16 @@ extension RootCmd {
         }
     }
 
-    @available(macOS 13.0, *)
-    struct RestartCmd: @preconcurrency ParsableCommand {
+    struct Restart: @preconcurrency ParsableCommand {
         // Configure command name and help text
-        static let configuration = CommandConfiguration(
+        @MainActor static let configuration = CommandConfiguration(
             commandName: "restart",
             abstract: "Restart OneDrive."
         )
         // Add mode flags to command
         @OptionGroup var modeFlags: ModeFlags
         // Run command
-        @MainActor
-        mutating func run() throws {
+        @MainActor mutating func run() throws {
             let odctl = ODCtl()
             if modeFlags.dryRun { odctl.dryRunMode = true }
             if modeFlags.quiet { odctl.quietMode = true }
@@ -376,5 +354,5 @@ extension RootCmd {
             odctl.restartOneDrive()
         }
     }
-    
+
 }
